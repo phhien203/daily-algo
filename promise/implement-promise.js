@@ -1,21 +1,21 @@
 const PromiseState = {
-  Pending: "pending",
-  Fulfilled: "fulfilled",
-  Rejected: "rejected",
+  pending: "pending",
+  fulfilled: "fulfilled",
+  rejected: "rejected",
 };
 
 class MyPromise {
-  state = PromiseState.Pending;
-  value = null;
-  fulfilledCallbacks = [];
-  rejectedCallbacks = [];
+  #state = PromiseState.pending;
+  #value = null;
+  #fulfilledCallbacks = [];
+  #rejectedCallbacks = [];
 
   get value() {
-    return this.value;
+    return this.#value;
   }
 
   get state() {
-    return this.state;
+    return this.#state;
   }
 
   constructor(executorFunction) {
@@ -30,29 +30,74 @@ class MyPromise {
   }
 
   #resolve(value) {
-    if (this.state !== PromiseState.Pending) return;
+    if (this.#state !== PromiseState.pending) return;
 
-    this.value = value;
-    this.state = PromiseState.Fulfilled;
-    this.fulfilledCallbacks.forEach((cb) => cb());
+    this.#value = value;
+    this.#state = PromiseState.fulfilled;
+    this.#fulfilledCallbacks.forEach((cb) => cb());
   }
 
   #reject(value) {
-    if (this.state !== PromiseState.Pending) return;
+    if (this.#state !== PromiseState.pending) return;
 
-    this.value = value;
-    this.state = PromiseState.Rejected;
-    this.rejectedCallbacks.forEach((cb) => cb());
+    this.#value = value;
+    this.#state = PromiseState.rejected;
+    this.#rejectedCallbacks.forEach((cb) => cb());
+  }
+
+  finally(callback) {
+    return new MyPromise((resolve, reject) => {
+      const doFulfillment = () => {
+        if (!callback) return;
+
+        queueMicrotask(() => {
+          try {
+            callback();
+            resolve(this.#value);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      };
+
+      const doRejection = () => {
+        if (!callback) return;
+
+        queueMicrotask(() => {
+          try {
+            callback();
+            reject(this.#value);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      };
+
+      switch (this.#state) {
+        case PromiseState.pending:
+          this.#fulfilledCallbacks.push(doFulfillment);
+          this.#rejectedCallbacks.push(doRejection);
+          break;
+        case PromiseState.fulfilled:
+          doFulfillment();
+          break;
+        case PromiseState.rejected:
+          doRejection();
+          break;
+        default:
+          throw new Error(`Unknown promise state ${this.#state}`);
+      }
+    });
   }
 
   then(onFulfilled, onRejected) {
     return new MyPromise((resolve, reject) => {
       const doFulfillment = () => {
-        if (!onFulfilled) return resolve(this.value);
+        if (!onFulfilled) return resolve(this.#value);
 
         queueMicrotask(() => {
           try {
-            const result = onFulfilled(this.value);
+            const result = onFulfilled(this.#value);
             resolve(result);
           } catch (error) {
             reject(error);
@@ -60,11 +105,11 @@ class MyPromise {
         });
       };
       const doRejection = () => {
-        if (!onRejected) return reject(this.value);
+        if (!onRejected) return reject(this.#value);
 
         queueMicrotask(() => {
           try {
-            const result = onRejected(this.value);
+            const result = onRejected(this.#value);
             resolve(result);
           } catch (error) {
             reject(error);
@@ -72,19 +117,19 @@ class MyPromise {
         });
       };
 
-      switch (this.state) {
-        case PromiseState.Pending:
-          this.fulfilledCallbacks.push(doFulfillment);
-          this.rejectedCallbacks.push(doRejection);
+      switch (this.#state) {
+        case PromiseState.pending:
+          this.#fulfilledCallbacks.push(doFulfillment);
+          this.#rejectedCallbacks.push(doRejection);
           break;
-        case PromiseState.Fulfilled:
+        case PromiseState.fulfilled:
           doFulfillment();
           break;
-        case PromiseState.Rejected:
+        case PromiseState.rejected:
           doRejection();
           break;
         default:
-          throw new Error(`Unknown promise state ${this.state}`);
+          throw new Error(`Unknown promise state ${this.#state}`);
       }
     });
   }
@@ -93,3 +138,11 @@ class MyPromise {
     return this.then(null, onRejected);
   }
 }
+
+MyPromise.resolve = function (value) {
+  return new MyPromise((resolve) => resolve(value));
+};
+
+MyPromise.reject = function (value) {
+  return new MyPromise((_, reject) => reject(value));
+};
